@@ -1,0 +1,161 @@
+---
+title: "Practical Machine Learmning: Prediction Assignment Writeup"
+output: 
+  html_document:
+    keep_md: true
+---
+
+```{r, import_library, include=FALSE}
+library(caret)
+set.seed(12345)
+```
+### 1. Loading training data, split the data on traing and cross validation sets.
+60% of data - traingng set
+40% of data - cross validation set
+```{r init, echo=TRUE}
+# Loading traing data
+data<-read.table("pml-training.csv", head=TRUE, sep=",")
+inTrain <- createDataPartition( data$classe, p=0.6, list = FALSE)
+training<-data[inTrain,]
+crossval<-data[-inTrain,]
+```
+**How much rows are in original, training and cross validation sets?**
+```{r dimention, echo=TRUE}
+dim(data)
+dim(training)
+dim(crossval)
+```
+
+
+### 2. Choose predictor columns
+There are 160 columns (featues) in original data set. This is too much for building any prediction model. We would like to drop some columns, i.e. not use them for prediction.  
+_**What columns we would like to drop?**_  
+1. Columns which contain reference information (the name of actor, time of measurement, number of row, etc.)  
+2. Columns which contains close to zero values.  
+3. Character columns  
+
+### 2.1. Reference information
+_**Will skip columnts the following columns**_  
+user_name  
+raw_timestamp_part_1  
+raw_timestamp_part_2  
+cvtd_timestamp  
+new_window  
+num_window  
+
+
+### 2.2. Find and remove zero- and near-zero columnts
+We will cut off zero and near zero columns.
+```{r nzv,echo=TRUE}
+nzv <- nearZeroVar(training, saveMetrics = TRUE)
+nzv[nzv$nzv,]
+
+```
+
+
+
+### 3. List of columns will be used for building fit model
+```{r predCols, echo=TRUE}
+predictors <- c(
+  "roll_belt", "pitch_belt",  "yaw_belt",
+  "gyros_belt_x",  "gyros_belt_y",  "gyros_belt_z",
+  "accel_belt_x",  "accel_belt_y",	"accel_belt_z",
+  "magnet_belt_x",  "magnet_belt_y",	"magnet_belt_z",
+  "roll_arm",  "pitch_arm",	"yaw_arm",
+  "gyros_arm_x",  "gyros_arm_y",	"gyros_arm_z",
+  "accel_arm_x",  "accel_arm_y",	"accel_arm_z",
+  "magnet_arm_x",	"magnet_arm_y",	"magnet_arm_z",
+  "roll_dumbbell",  "pitch_dumbbell",	"yaw_dumbbell",
+  "gyros_dumbbell_x", "gyros_dumbbell_y",	"gyros_dumbbell_z",
+  "accel_dumbbell_x", "accel_dumbbell_y",	"accel_dumbbell_z",	
+  "magnet_dumbbell_x", "magnet_dumbbell_y", "magnet_dumbbell_z",
+  "roll_forearm", "pitch_forearm", "yaw_forearm",
+  "gyros_forearm_x", "gyros_forearm_y", "gyros_forearm_z",
+  "accel_forearm_x", "accel_forearm_y", "accel_forearm_z",	
+  "magnet_forearm_x", "magnet_forearm_y", "magnet_forearm_z"
+)
+
+training <- training[, c(predictors, "classe")]
+crossval <- crossval[, c(predictors, "classe")]
+```
+
+
+### Building model
+#### Creating prediction model based on training data set and columns described in Item 3 "List of columns"
+We will use random forest model.
+```{r create_model, echo=TRUE}
+fit <- train(classe~., data=training, method="rf")
+fit
+
+```
+Accuracy is about 0.9856449, kappa is 0.9822791.
+
+```{r final_mode, echo=TRUE}
+fit$finalModel
+```
+
+#### Cross validate model
+```{r cross_val, echo=TRUE}
+cm <- confusionMatrix(crossval$classe, predict(fit, crossval))
+cm$overall
+
+```
+Accuracy is 0.9940097, kapps is 0.9924218. This is higher than accuracy of model on training data set. Good results!
+
+## 4. Test data set 
+Now we will load test data sets (20 measurements) and will classify each measument.
+
+```{r test_ds, echo=TRUE}
+testing<-read.table("pml-testing.csv", head=TRUE, sep=",")
+dim(testing)
+testing <- testing[, c(predictors)]
+
+result <- predict( fit, testing)
+result
+answers <- as.character(result)
+answers
+```
+
+
+### 4.1 Save results of prediction to files for submission to Coursera
+```{r save_to_file, echo=TRUE}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(answers)
+
+```
+
+
+## Appendix
+### Appendix 1. Example of exploratory data analisys
+Below is an eample of how some of the selected columns features) affects on outcome (classe).
+```{r epl, echo=TRUE}
+colGroup1 <- c(
+  "roll_dumbbell",  "pitch_dumbbell",  "yaw_dumbbell",
+  "roll_forearm", "pitch_forearm", "yaw_forearm"
+)
+
+featurePlot(x = training[, colGroup1],
+            y = training$classe,
+            plot = "pairs",
+            ## Add a key at the top
+            auto.key = list(columns = 5))
+```
+
+### Appendix 2. Fitting model. Dependency of error from number of trees
+```{r plot_model, echo=TRUE}
+plot(fit$finalModel)
+```
+
+### Appendix 3. The most important features
+This diagramm shows which columns were choosen as most important by random forest training algorithm.
+```{r imp_cols, echo=TRUE}
+gbmImp <- varImp(fit, scale = FALSE)
+plot(gbmImp, top = 20)
+```
